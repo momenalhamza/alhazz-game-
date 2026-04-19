@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "لعبة الحزر",
+    "slug": "alhazz",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "alhazz",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0e3520",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.alhazz.game",
+      "buildNumber": "1.0.0"
+    },
+    "android": {
+      "package": "com.alhazz.game",
+      "versionCode": 1
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router"
+    ]
+  }
+}
