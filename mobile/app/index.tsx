@@ -1,5 +1,5 @@
 import { View, Text, TextInput, Pressable, StyleSheet, Alert } from 'react-native';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { useSocket } from '@/hooks/useSocket';
@@ -12,6 +12,7 @@ export default function HomeScreen() {
   const [showJoinInput, setShowJoinInput] = useState(false);
   const [skipConnection, setSkipConnection] = useState(false);
   const router = useRouter();
+  const isSubmitting = useRef(false);
   const { createRoom, joinRoom } = useSocket();
   const { connected, playerName: savedName } = useGameStore();
 
@@ -53,12 +54,17 @@ export default function HomeScreen() {
   }, []);
 
   const handleCreateRoom = () => {
+    if (isSubmitting.current) return;
     console.log('handleCreateRoom called, playerName:', playerName);
     if (!playerName.trim()) {
       Alert.alert('خطأ', 'يرجى إدخال اسم اللاعب');
       return;
     }
+    isSubmitting.current = true;
     createRoom(playerName.trim());
+    setTimeout(() => {
+      isSubmitting.current = false;
+    }, 3000);
   };
 
   const handleJoinRoom = () => {
@@ -72,6 +78,15 @@ export default function HomeScreen() {
     }
     joinRoom(roomCode.trim().toUpperCase(), playerName.trim());
   };
+
+  // Navigate to lobby when room is created or joined
+  const { roomCode: storeRoomCode, lobbyPlayers } = useGameStore();
+  useEffect(() => {
+    if (storeRoomCode && lobbyPlayers.length > 0) {
+      console.log('Navigating to lobby:', storeRoomCode);
+      router.push(`/lobby/${storeRoomCode}`);
+    }
+  }, [storeRoomCode, lobbyPlayers]);
 
   const allowAction = connected || skipConnection;
 
@@ -139,10 +154,17 @@ export default function HomeScreen() {
               style={({ pressed }) => [
                 styles.button,
                 styles.primaryButton,
+                (roomCode.length !== 6) && { opacity: 0.5 },
                 pressed && styles.buttonPressed,
               ]}
-              onPress={handleJoinRoom}
-              disabled={!allowAction || roomCode.length !== 6}
+              onPress={() => {
+                console.log('Join button pressed, roomCode:', roomCode);
+                if (roomCode.length !== 6) {
+                  Alert.alert('خطأ', 'رمز الغرفة يجب أن يكون 6 أحرف');
+                  return;
+                }
+                handleJoinRoom();
+              }}
             >
               <Text style={styles.buttonText}>انضم الآن</Text>
             </Pressable>

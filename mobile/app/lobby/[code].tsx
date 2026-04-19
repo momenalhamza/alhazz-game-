@@ -35,8 +35,10 @@ export default function LobbyScreen() {
   };
 
   const handleShare = async () => {
-    if (roomCode) {
-      await Sharing.shareAsync(`انضم لي في لعبة الحزر!\nرمز الغرفة: ${roomCode}\n\nalhazz://join/${roomCode}`);
+    if (roomCode || code) {
+      const shareCode = roomCode || code;
+      await Clipboard.setStringAsync(shareCode);
+      Alert.alert('✅ تم النسخ', 'شارك رمز الغرفة مع أصدقائك: ' + shareCode);
     }
   };
 

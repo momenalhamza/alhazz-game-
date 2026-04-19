@@ -44,12 +44,8 @@ export const COLORS = {
   warning: '#ff9800',
 };
 
-// Server URL - Railway or local
-// For testing locally with phone on same wifi, use your computer's IP
-export const SOCKET_URL = 'http://192.168.100.17:3000';
-
-// For Railway deployment:
-// export const SOCKET_URL = 'wss://overflowing-dream-production-74fb.up.railway.app';
+// Railway Production URL - Works worldwide
+export const SOCKET_URL = 'https://overflowing-dream-production-74fb.up.railway.app';
 
 export const AGORA_APP_ID = '763d6511555e4b7fac3be44f077372bb';
 

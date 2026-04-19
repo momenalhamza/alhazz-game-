@@ -112,12 +112,14 @@ io.on('connection', (socket) => {
         } else {
           // Normal join
           socket.join(code);
+          const playersList = result.room.players.map(p => p.name);
           socket.emit('room_joined', {
             code,
-            players: result.room.players.map(p => p.name),
+            players: playersList,
           });
-          socket.to(code).emit('player_joined', {
-            players: result.room.players.map(p => p.name),
+          // Emit to ALL players in room INCLUDING the new player
+          io.to(code).emit('player_joined', {
+            players: playersList,
             newPlayer: playerName,
           });
         }
@@ -498,6 +500,6 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`Al-Hazz server running on port ${PORT}`);
 });
