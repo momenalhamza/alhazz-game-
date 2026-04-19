@@ -50,46 +50,36 @@ export default function LobbyScreen() {
     }
   };
 
+  // BUG 2: Copy button
   const handleShare = async () => {
-    if (roomCode || code) {
-      const shareCode = roomCode || code;
-      await Clipboard.setStringAsync(shareCode);
-      Alert.alert('✅ تم النسخ', 'شارك رمز الغرفة مع أصدقائك: ' + shareCode);
-    }
+    const currentCode = roomCode || (code as string);
+    await Clipboard.setStringAsync(currentCode);
+    Alert.alert('✅', 'تم نسخ رمز الغرفة: ' + currentCode);
   };
 
-  // BUG 2: Kick player handler (host only)
+  // BUG 3: Kick player handler (host only)
   const handleKickPlayer = (playerToKick: string) => {
-    if (!isHost) return;
-    Alert.alert(
-      'طرد لاعب',
-      `هل تريد طرد ${playerToKick}؟`,
-      [
-        { text: 'إلغاء', style: 'cancel' },
-        {
-          text: 'طرد',
-          style: 'destructive',
-          onPress: () => {
-            socket?.emit('kick_player', { code: roomCode || code, playerName: playerToKick });
-          },
-        },
-      ]
-    );
+    const currentCode = roomCode || (code as string);
+    Alert.alert('طرد لاعب', 'هل تريد طرد ' + playerToKick + '؟', [
+      { text: 'إلغاء', style: 'cancel' },
+      { text: 'طرد', style: 'destructive', onPress: () => {
+        socket?.emit('kick_player', { code: currentCode, playerName: playerToKick });
+      }},
+    ]);
   };
 
   // BUG 4: Back button - leave room
   const handleBack = () => {
-    disconnect();
+    const currentCode = roomCode || (code as string);
+    socket?.emit('leave_room', { code: currentCode });
     router.replace('/');
   };
 
-  // Manual start (if auto-start didn't work)
+  // BUG 1: Start game button
   const handleStartGame = () => {
-    if (lobbyPlayers.length < 4) {
-      Alert.alert('تنبيه', 'اللعبة تحتاج إلى 4 لاعبين');
-      return;
-    }
-    startGame();
+    const currentCode = roomCode || (code as string);
+    console.log('Starting game for room:', currentCode);
+    socket?.emit('start_game', { code: currentCode });
   };
 
   return (

@@ -81,9 +81,10 @@ export function useSocket() {
     });
 
     // Game events
-    socket.on('game_started', ({ drawCount }) => {
+    socket.on('game_started', (data) => {
+    console.log('game_started received!', data);
       store.setLoading(false);
-      store.addLogEntry(`بدأت اللعبة! ${drawCount} ورقة في المخزن`, 'success');
+      store.addLogEntry('بدأت اللعبة!', 'success');
     });
 
     socket.on('game_state', (state: GameState) => {
