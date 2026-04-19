@@ -483,7 +483,57 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Handle disconnect
+  // Kick player (host only)
+socket.on('kick_player', ({ code, playerName }) => {
+  try {
+    const room = getRoom(code);
+    if (!room) {
+      socket.emit('error', { message: 'الغرفة غير موجودة' });
+      return;
+    }
+
+    // Check if requester is the host (first player)
+    const requester = room.players.find(p => p.id === socket.id);
+    if (!requester || requester.playerIndex !== 0) {
+      socket.emit('error', { message: 'فقط صاحب الغرفة يمكنه طرد اللاعبين' });
+      return;
+    }
+
+    // Find the player to kick
+    const playerToKick = room.players.find(p => p.name === playerName);
+    if (!playerToKick) {
+      socket.emit('error', { message: 'اللاعب غير موجود' });
+      return;
+    }
+
+    // Emit kicked event to the player
+    const targetSocket = io.sockets.sockets.get(playerToKick.id);
+    if (targetSocket) {
+      targetSocket.emit('kicked', { message: 'تم طردك من الغرفة' });
+      targetSocket.leave(code);
+    }
+
+    // Remove player from room
+    room.players = room.players.filter(p => p.name !== playerName);
+    playerToRoom.delete(playerToKick.id);
+
+    // Renumber remaining players
+    room.players.forEach((p, i) => {
+      p.playerIndex = i;
+    });
+
+    // Notify remaining players
+    io.to(code).emit('player_left', {
+      players: room.players.map(p => p.name),
+    });
+
+    console.log(`Player ${playerName} kicked from room ${code}`);
+  } catch (error) {
+    socket.emit('error', { message: error.message });
+  }
+});
+
+// Handle disconnect
   socket.on('disconnect', () => {
     console.log('Player disconnected:', socket.id);
     const result = leaveRoom(socket.id);
