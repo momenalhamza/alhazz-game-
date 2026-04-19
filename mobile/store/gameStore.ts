@@ -31,6 +31,8 @@ interface GameStore {
   // Game
   gameState: GameState | null;
   setGameState: (state: GameState | null) => void;
+  gameStarted: boolean;
+  setGameStarted: (started: boolean) => void;
 
   // Cards (private hand)
   myHand: Card[];
@@ -98,6 +100,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   gameState: null,
   setGameState: (state) => set({ gameState: state }),
+  gameStarted: false,
+  setGameStarted: (started) => set({ gameStarted: started }),
 
   myHand: [],
   setMyHand: (cards) => set({ myHand: cards }),
@@ -160,6 +164,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     lobbyPlayers: [],
     isHost: false,
     gameState: null,
+    gameStarted: false,
     myHand: [],
     mySets: [],
     players: [],

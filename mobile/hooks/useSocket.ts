@@ -82,8 +82,9 @@ export function useSocket() {
 
     // Game events
     socket.on('game_started', (data) => {
-    console.log('game_started received!', data);
+      console.log('game_started received!', data);
       store.setLoading(false);
+      store.setGameStarted(true);
       store.addLogEntry('بدأت اللعبة!', 'success');
     });
 

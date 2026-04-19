@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, Pressable, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Alert, ActivityIndicator, Platform } from 'react-native';
 import { useEffect } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
@@ -9,30 +9,35 @@ import { COLORS } from '@/constants/game';
 export default function LobbyScreen() {
   const { code } = useLocalSearchParams<{ code: string }>();
   const router = useRouter();
-  const { startGame, disconnect, socket } = useSocket();
+  const { socket } = useSocket();
   const {
     lobbyPlayers,
     isHost,
     gameState,
+    gameStarted,
     roomCode,
     loading,
     loadingMessage,
     playerName: myPlayerName,
   } = useGameStore();
 
-  // BUG 3 & BUG 4: Navigate to game when started or navigate back when kicked
+  // Navigate to game when started
   useEffect(() => {
-    if (gameState) {
-      router.replace(`/game/${code}`);
+    if (gameState || gameStarted) {
+      router.replace('/game/' + (roomCode || code));
     }
-  }, [gameState, code]);
+  }, [gameState, gameStarted, roomCode, code]);
 
   // Handle kicked event
   useEffect(() => {
     if (!socket) return;
 
     const handleKicked = ({ message }: { message: string }) => {
-      Alert.alert('تم الطرد', message);
+      if (Platform.OS === 'web') {
+        window.alert(message);
+      } else {
+        Alert.alert('تم الطرد', message);
+      }
       router.replace('/');
     };
 
@@ -43,39 +48,62 @@ export default function LobbyScreen() {
   }, [socket, router]);
 
   const handleCopyCode = async () => {
-    if (roomCode || code) {
-      const shareCode = roomCode || code;
-      await Clipboard.setStringAsync(shareCode);
-      Alert.alert('✅', 'تم نسخ رمز الغرفة: ' + shareCode);
+    const currentCode = roomCode || (code as string);
+    if (Platform.OS === 'web') {
+      try {
+        await navigator.clipboard.writeText(currentCode);
+        window.alert('تم نسخ رمز الغرفة: ' + currentCode);
+      } catch {
+        window.alert('رمز الغرفة: ' + currentCode);
+      }
+    } else {
+      await Clipboard.setStringAsync(currentCode);
+      Alert.alert('✅', 'تم نسخ رمز الغرفة: ' + currentCode);
     }
   };
 
-  // BUG 2: Copy button
+  // Copy button
   const handleShare = async () => {
     const currentCode = roomCode || (code as string);
-    await Clipboard.setStringAsync(currentCode);
-    Alert.alert('✅', 'تم نسخ رمز الغرفة: ' + currentCode);
+    if (Platform.OS === 'web') {
+      try {
+        await navigator.clipboard.writeText(currentCode);
+        window.alert('تم نسخ رمز الغرفة: ' + currentCode);
+      } catch {
+        window.alert('رمز الغرفة: ' + currentCode);
+      }
+    } else {
+      await Clipboard.setStringAsync(currentCode);
+      Alert.alert('✅', 'تم نسخ رمز الغرفة: ' + currentCode);
+    }
   };
 
-  // BUG 3: Kick player handler (host only)
+  // Kick player handler (host only)
   const handleKickPlayer = (playerToKick: string) => {
     const currentCode = roomCode || (code as string);
-    Alert.alert('طرد لاعب', 'هل تريد طرد ' + playerToKick + '؟', [
-      { text: 'إلغاء', style: 'cancel' },
-      { text: 'طرد', style: 'destructive', onPress: () => {
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm('هل تريد طرد ' + playerToKick + '؟');
+      if (confirmed) {
         socket?.emit('kick_player', { code: currentCode, playerName: playerToKick });
-      }},
-    ]);
+      }
+    } else {
+      Alert.alert('طرد', 'هل تريد طرد ' + playerToKick, [
+        { text: 'إلغاء', style: 'cancel' },
+        { text: 'طرد', style: 'destructive', onPress: () => {
+          socket?.emit('kick_player', { code: currentCode, playerName: playerToKick });
+        }},
+      ]);
+    }
   };
 
-  // BUG 4: Back button - leave room
+  // Back button - leave room
   const handleBack = () => {
     const currentCode = roomCode || (code as string);
     socket?.emit('leave_room', { code: currentCode });
     router.replace('/');
   };
 
-  // BUG 1: Start game button
+  // Start game button
   const handleStartGame = () => {
     const currentCode = roomCode || (code as string);
     console.log('Starting game for room:', currentCode);
@@ -84,7 +112,7 @@ export default function LobbyScreen() {
 
   return (
     <View style={styles.container}>
-      {/* BUG 4: Back button */}
+      {/* Back button */}
       <Pressable style={styles.backButton} onPress={handleBack}>
         <Text style={styles.backButtonText}>← خروج</Text>
       </Pressable>
@@ -118,7 +146,7 @@ export default function LobbyScreen() {
               <Text style={styles.playerName}>{player}</Text>
               {index === 0 && <Text style={styles.hostBadge}>👑 صاحب الغرفة</Text>}
             </View>
-            {/* BUG 2: Kick button (host only, can't kick self) */}
+            {/* Kick button (host only, can't kick self) */}
             {isHost && player !== myPlayerName && (
               <Pressable
                 style={styles.kickButton}
