@@ -1,8 +1,7 @@
 import { View, Text, StyleSheet, Pressable, Alert, ActivityIndicator } from 'react-native';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
-import * as Sharing from 'expo-sharing';
 import { useSocket } from '@/hooks/useSocket';
 import { useGameStore } from '@/store/gameStore';
 import { COLORS } from '@/constants/game';
@@ -10,7 +9,7 @@ import { COLORS } from '@/constants/game';
 export default function LobbyScreen() {
   const { code } = useLocalSearchParams<{ code: string }>();
   const router = useRouter();
-  const { startGame, disconnect } = useSocket();
+  const { startGame, disconnect, socket } = useSocket();
   const {
     lobbyPlayers,
     isHost,
@@ -18,19 +17,36 @@ export default function LobbyScreen() {
     roomCode,
     loading,
     loadingMessage,
+    playerName: myPlayerName,
   } = useGameStore();
 
+  // BUG 3 & BUG 4: Navigate to game when started or navigate back when kicked
   useEffect(() => {
     if (gameState) {
-      // Game started, navigate to game screen
       router.replace(`/game/${code}`);
     }
   }, [gameState, code]);
 
+  // Handle kicked event
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleKicked = ({ message }: { message: string }) => {
+      Alert.alert('تم الطرد', message);
+      router.replace('/');
+    };
+
+    socket.on('kicked', handleKicked);
+    return () => {
+      socket.off('kicked', handleKicked);
+    };
+  }, [socket, router]);
+
   const handleCopyCode = async () => {
-    if (roomCode) {
-      await Clipboard.setStringAsync(roomCode);
-      Alert.alert('تم النسخ', `تم نسخ رمز الغرفة: ${roomCode}`);
+    if (roomCode || code) {
+      const shareCode = roomCode || code;
+      await Clipboard.setStringAsync(shareCode);
+      Alert.alert('✅', 'تم نسخ رمز الغرفة: ' + shareCode);
     }
   };
 
@@ -42,21 +58,47 @@ export default function LobbyScreen() {
     }
   };
 
+  // BUG 2: Kick player handler (host only)
+  const handleKickPlayer = (playerToKick: string) => {
+    if (!isHost) return;
+    Alert.alert(
+      'طرد لاعب',
+      `هل تريد طرد ${playerToKick}؟`,
+      [
+        { text: 'إلغاء', style: 'cancel' },
+        {
+          text: 'طرد',
+          style: 'destructive',
+          onPress: () => {
+            socket?.emit('kick_player', { code: roomCode || code, playerName: playerToKick });
+          },
+        },
+      ]
+    );
+  };
+
+  // BUG 4: Back button - leave room
+  const handleBack = () => {
+    disconnect();
+    router.replace('/');
+  };
+
+  // Manual start (if auto-start didn't work)
   const handleStartGame = () => {
-    if (lobbyPlayers.length !== 4) {
+    if (lobbyPlayers.length < 4) {
       Alert.alert('تنبيه', 'اللعبة تحتاج إلى 4 لاعبين');
       return;
     }
     startGame();
   };
 
-  const handleLeave = () => {
-    disconnect();
-    router.replace('/');
-  };
-
   return (
     <View style={styles.container}>
+      {/* BUG 4: Back button */}
+      <Pressable style={styles.backButton} onPress={handleBack}>
+        <Text style={styles.backButtonText}>← خروج</Text>
+      </Pressable>
+
       <Text style={styles.title}>الانتظار</Text>
 
       {/* Room code display */}
@@ -68,56 +110,62 @@ export default function LobbyScreen() {
 
       {/* Share button */}
       <Pressable style={styles.shareButton} onPress={handleShare}>
-        <Text style={styles.shareText}>مشاركة الدعوة</Text>
+        <Text style={styles.shareText}>📋 نسخ رمز الغرفة</Text>
       </Pressable>
 
       {/* Players list */}
       <View style={styles.playersContainer}>
         <Text style={styles.playersLabel}>اللاعبون ({lobbyPlayers.length}/4)</Text>
-        {Array.from({ length: 4 }).map((_, index) => (
+        {lobbyPlayers.map((player, index) => (
           <View
             key={index}
             style={[
               styles.playerSlot,
-              lobbyPlayers[index] ? styles.playerReady : styles.playerEmpty,
+              styles.playerReady,
             ]}
           >
-            <Text style={styles.playerName}>
-              {lobbyPlayers[index] || 'فارغ'}
-            </Text>
-            {lobbyPlayers[index] && (
-              <Text style={styles.readyBadge}>جاهز</Text>
+            <View style={styles.playerInfo}>
+              <Text style={styles.playerName}>{player}</Text>
+              {index === 0 && <Text style={styles.hostBadge}>👑 صاحب الغرفة</Text>}
+            </View>
+            {/* BUG 2: Kick button (host only, can't kick self) */}
+            {isHost && player !== myPlayerName && (
+              <Pressable
+                style={styles.kickButton}
+                onPress={() => handleKickPlayer(player)}
+              >
+                <Text style={styles.kickButtonText}>❌ طرد</Text>
+              </Pressable>
             )}
+          </View>
+        ))}
+        {/* Empty slots */}
+        {Array.from({ length: 4 - lobbyPlayers.length }).map((_, index) => (
+          <View key={`empty-${index}`} style={[styles.playerSlot, styles.playerEmpty]}>
+            <Text style={styles.emptyText}>فارغ</Text>
           </View>
         ))}
       </View>
 
-      {/* Waiting or Ready message */}
+      {/* Status messages */}
       {lobbyPlayers.length < 4 ? (
-        <Text style={styles.waitingText}>في انتظار اللاعبين...</Text>
+        <Text style={styles.waitingText}>في انتظار اللاعبين... ({lobbyPlayers.length}/4)</Text>
       ) : (
-        <Text style={styles.readyText}>الجميع جاهز!</Text>
+        <Text style={styles.readyText}>✅ الجميع جاهز! تبدأ اللعبة تلقائياً...</Text>
       )}
 
-      {/* Start button (host only) */}
-      {isHost && (
+      {/* Manual start (fallback) */}
+      {isHost && lobbyPlayers.length >= 4 && (
         <Pressable
           style={({ pressed }) => [
             styles.startButton,
-            lobbyPlayers.length !== 4 && styles.startButtonDisabled,
-            pressed && lobbyPlayers.length === 4 && styles.buttonPressed,
+            pressed && styles.buttonPressed,
           ]}
           onPress={handleStartGame}
-          disabled={lobbyPlayers.length !== 4}
         >
-          <Text style={styles.startButtonText}>ابدأ اللعبة!</Text>
+          <Text style={styles.startButtonText}>ابدأ اللعبة الآن</Text>
         </Pressable>
       )}
-
-      {/* Leave button */}
-      <Pressable style={styles.leaveButton} onPress={handleLeave}>
-        <Text style={styles.leaveButtonText}>مغادرة الغرفة</Text>
-      </Pressable>
 
       {/* Loading overlay */}
       {loading && (
@@ -126,6 +174,11 @@ export default function LobbyScreen() {
           <Text style={styles.loadingText}>{loadingMessage}</Text>
         </View>
       )}
+
+      {/* Tips */}
+      <View style={styles.tipsContainer}>
+        <Text style={styles.tipText}>💡 انسخ رمز الغرفة وأرسله لأصدقائك للانضمام</Text>
+      </View>
     </View>
   );
 }
@@ -135,14 +188,22 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
     padding: 24,
-    justifyContent: 'center',
     alignItems: 'center',
+  },
+  backButton: {
+    alignSelf: 'flex-start',
+    padding: 12,
+    marginBottom: 16,
+  },
+  backButtonText: {
+    color: COLORS.textSecondary,
+    fontSize: 18,
   },
   title: {
     fontSize: 36,
     fontWeight: 'bold',
     color: COLORS.accent,
-    marginBottom: 32,
+    marginBottom: 24,
   },
   codeContainer: {
     alignItems: 'center',
@@ -152,6 +213,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: COLORS.accent,
     marginBottom: 16,
+    width: '100%',
   },
   codeLabel: {
     fontSize: 16,
@@ -170,17 +232,20 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   shareButton: {
-    padding: 12,
-    marginBottom: 32,
+    backgroundColor: COLORS.surfaceLight,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginBottom: 24,
   },
   shareText: {
     fontSize: 16,
     color: COLORS.accent,
-    textDecorationLine: 'underline',
+    fontWeight: 'bold',
   },
   playersContainer: {
     width: '100%',
-    marginBottom: 32,
+    marginBottom: 24,
   },
   playersLabel: {
     fontSize: 18,
@@ -205,15 +270,40 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
     borderColor: COLORS.textSecondary,
     borderStyle: 'dashed',
+    justifyContent: 'center',
+  },
+  playerInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   playerName: {
     fontSize: 18,
     color: COLORS.textPrimary,
+    fontWeight: 'bold',
+  },
+  hostBadge: {
+    fontSize: 12,
+    color: COLORS.accent,
+    marginLeft: 8,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: COLORS.textSecondary,
   },
   readyBadge: {
     fontSize: 14,
     color: COLORS.success,
     fontWeight: 'bold',
+  },
+  kickButton: {
+    backgroundColor: COLORS.error,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  kickButtonText: {
+    color: COLORS.textPrimary,
+    fontSize: 14,
   },
   waitingText: {
     fontSize: 18,
@@ -233,24 +323,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginBottom: 16,
   },
-  startButtonDisabled: {
-    backgroundColor: COLORS.textSecondary,
-  },
-  buttonPressed: {
-    opacity: 0.8,
-    transform: [{ scale: 0.98 }],
-  },
   startButtonText: {
     fontSize: 24,
     fontWeight: 'bold',
     color: COLORS.textPrimary,
   },
-  leaveButton: {
-    padding: 12,
-  },
-  leaveButtonText: {
-    fontSize: 16,
-    color: COLORS.error,
+  buttonPressed: {
+    opacity: 0.8,
   },
   loadingOverlay: {
     position: 'absolute',
@@ -266,5 +345,14 @@ const styles = StyleSheet.create({
     marginTop: 16,
     fontSize: 18,
     color: COLORS.accent,
+  },
+  tipsContainer: {
+    marginTop: 'auto',
+    paddingTop: 24,
+  },
+  tipText: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
   },
 });
