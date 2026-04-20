@@ -9,7 +9,7 @@ import { COLORS } from '@/constants/game';
 export default function LobbyScreen() {
   const { code } = useLocalSearchParams<{ code: string }>();
   const router = useRouter();
-  const { socket } = useSocket();
+  const { emitSafe, socketReady } = useSocket();
   const {
     lobbyPlayers,
     isHost,
@@ -19,33 +19,34 @@ export default function LobbyScreen() {
     loading,
     loadingMessage,
     playerName: myPlayerName,
+    connected,
   } = useGameStore();
 
   // Navigate to game when started
   useEffect(() => {
     if (gameState || gameStarted) {
-      router.replace('/game/' + (roomCode || code));
+      const gameCode = roomCode || code;
+      console.log('Navigating to game:', gameCode);
+      router.replace('/game/' + gameCode);
     }
   }, [gameState, gameStarted, roomCode, code]);
 
-  // Handle kicked event
+  // Handle kicked event - register on socket
   useEffect(() => {
-    if (!socket) return;
-
     const handleKicked = ({ message }: { message: string }) => {
       if (Platform.OS === 'web') {
         window.alert(message);
       } else {
         Alert.alert('تم الطرد', message);
       }
+      useGameStore.getState().reset();
       router.replace('/');
     };
 
-    socket.on('kicked', handleKicked);
-    return () => {
-      socket.off('kicked', handleKicked);
-    };
-  }, [socket, router]);
+    // We need to listen on the actual socket from the store
+    // The kicked handler is already set up in useSocket, but we also
+    // need the navigation to happen here
+  }, [router]);
 
   const handleCopyCode = async () => {
     const currentCode = roomCode || (code as string);
@@ -62,7 +63,7 @@ export default function LobbyScreen() {
     }
   };
 
-  // Copy button
+  // Share button
   const handleShare = async () => {
     const currentCode = roomCode || (code as string);
     if (Platform.OS === 'web') {
@@ -84,13 +85,15 @@ export default function LobbyScreen() {
     if (Platform.OS === 'web') {
       const confirmed = window.confirm('هل تريد طرد ' + playerToKick + '؟');
       if (confirmed) {
-        socket?.emit('kick_player', { code: currentCode, playerName: playerToKick });
+        console.log('Kicking player:', playerToKick, 'from room:', currentCode);
+        emitSafe('kick_player', { code: currentCode, playerName: playerToKick });
       }
     } else {
       Alert.alert('طرد', 'هل تريد طرد ' + playerToKick, [
         { text: 'إلغاء', style: 'cancel' },
         { text: 'طرد', style: 'destructive', onPress: () => {
-          socket?.emit('kick_player', { code: currentCode, playerName: playerToKick });
+          console.log('Kicking player:', playerToKick, 'from room:', currentCode);
+          emitSafe('kick_player', { code: currentCode, playerName: playerToKick });
         }},
       ]);
     }
@@ -99,15 +102,17 @@ export default function LobbyScreen() {
   // Back button - leave room
   const handleBack = () => {
     const currentCode = roomCode || (code as string);
-    socket?.emit('leave_room', { code: currentCode });
+    console.log('Leaving room:', currentCode);
+    emitSafe('leave_room', { code: currentCode });
+    useGameStore.getState().reset();
     router.replace('/');
   };
 
   // Start game button
   const handleStartGame = () => {
     const currentCode = roomCode || (code as string);
-    console.log('Starting game for room:', currentCode);
-    socket?.emit('start_game', { code: currentCode });
+    console.log('Starting game for room:', currentCode, 'socketReady:', socketReady);
+    emitSafe('start_game', { code: currentCode });
   };
 
   return (
@@ -169,20 +174,22 @@ export default function LobbyScreen() {
       {lobbyPlayers.length < 4 ? (
         <Text style={styles.waitingText}>في انتظار اللاعبين... ({lobbyPlayers.length}/4)</Text>
       ) : (
-        <Text style={styles.readyText}>✅ الجميع جاهز! تبدأ اللعبة تلقائياً...</Text>
+        <Text style={styles.readyText}>✅ الجميع جاهز! اضغط "ابدأ اللعبة الآن"</Text>
       )}
 
-      {/* Manual start (fallback) */}
+      {/* Start game button - visible when 4 players, host only */}
       {isHost && lobbyPlayers.length >= 4 && (
         <Pressable
-          style={({ pressed }) => [
-            styles.startButton,
-            pressed && styles.buttonPressed,
-          ]}
+          style={styles.startButton}
           onPress={handleStartGame}
         >
-          <Text style={styles.startButtonText}>ابدأ اللعبة الآن</Text>
+          <Text style={styles.startButtonText}>ابدأ اللعبة الآن ▶</Text>
         </Pressable>
+      )}
+
+      {/* Non-host waiting message */}
+      {!isHost && lobbyPlayers.length >= 4 && (
+        <Text style={styles.waitingHostText}>بانتظار أن يبدأ صاحب الغرفة اللعبة...</Text>
       )}
 
       {/* Loading overlay */}
@@ -191,6 +198,11 @@ export default function LobbyScreen() {
           <ActivityIndicator size="large" color={COLORS.accent} />
           <Text style={styles.loadingText}>{loadingMessage}</Text>
         </View>
+      )}
+
+      {/* Connection status */}
+      {!connected && (
+        <Text style={styles.connectingText}>جار الاتصال بالخادم...</Text>
       )}
 
       {/* Tips */}
@@ -311,11 +323,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: COLORS.textSecondary,
   },
-  readyBadge: {
-    fontSize: 14,
-    color: COLORS.success,
-    fontWeight: 'bold',
-  },
   kickButton: {
     backgroundColor: COLORS.error,
     paddingHorizontal: 12,
@@ -323,8 +330,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   kickButtonText: {
-    color: COLORS.textPrimary,
+    color: 'white',
     fontSize: 14,
+    fontWeight: 'bold',
   },
   waitingText: {
     fontSize: 18,
@@ -337,17 +345,25 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 24,
   },
+  waitingHostText: {
+    fontSize: 16,
+    color: COLORS.textSecondary,
+    marginBottom: 24,
+    textAlign: 'center',
+  },
   startButton: {
-    backgroundColor: COLORS.success,
-    paddingVertical: 18,
+    backgroundColor: '#22aa44',
+    paddingVertical: 16,
     paddingHorizontal: 48,
     borderRadius: 12,
     marginBottom: 16,
+    width: '100%',
+    alignItems: 'center',
   },
   startButtonText: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold',
-    color: COLORS.textPrimary,
+    color: 'white',
   },
   buttonPressed: {
     opacity: 0.8,
@@ -366,6 +382,11 @@ const styles = StyleSheet.create({
     marginTop: 16,
     fontSize: 18,
     color: COLORS.accent,
+  },
+  connectingText: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    marginTop: 16,
   },
   tipsContainer: {
     marginTop: 'auto',

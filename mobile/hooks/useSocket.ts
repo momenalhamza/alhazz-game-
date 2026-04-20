@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useGameStore } from '@/store/gameStore';
 import { SOCKET_URL, GameState, Card } from '@/constants/game';
@@ -6,6 +6,7 @@ import { SOCKET_URL, GameState, Card } from '@/constants/game';
 export function useSocket() {
   const socketRef = useRef<Socket | null>(null);
   const store = useGameStore();
+  const [socketReady, setSocketReady] = useState(false);
 
   // Connect only once when component mounts
   useEffect(() => {
@@ -27,11 +28,13 @@ export function useSocket() {
     socket.on('connect', () => {
       console.log('Socket connected:', socket.id);
       store.setConnected(true);
+      setSocketReady(true);
     });
 
     socket.on('disconnect', (reason) => {
       console.log('Socket disconnected:', reason);
       store.setConnected(false);
+      setSocketReady(false);
     });
 
     socket.on('connect_error', (error) => {
@@ -78,6 +81,16 @@ export function useSocket() {
 
     socket.on('player_disconnected', ({ playerName, message }) => {
       store.addLogEntry(message, 'warning');
+    });
+
+    socket.on('kicked', ({ message }) => {
+      console.log('Kicked from room:', message);
+      store.showToast(message, 'error');
+      store.reset();
+      // Navigate to home - we use a simple approach
+      if (typeof window !== 'undefined') {
+        window.location.href = '/';
+      }
     });
 
     // Game events
@@ -158,6 +171,7 @@ export function useSocket() {
       console.log('Cleaning up socket...');
       socket.disconnect();
       socketRef.current = null;
+      setSocketReady(false);
     };
   }, []); // Only run once on mount
 
@@ -165,78 +179,95 @@ export function useSocket() {
     if (socketRef.current) {
       socketRef.current.disconnect();
       socketRef.current = null;
+      setSocketReady(false);
     }
   }, []);
+
+  const emitSafe = useCallback((event: string, data: any) => {
+    const socket = socketRef.current;
+    if (socket && socket.connected) {
+      socket.emit(event, data);
+      console.log(`Emitted ${event}:`, data);
+      return true;
+    } else {
+      console.error(`Cannot emit ${event}: socket not connected`);
+      store.showToast('غير متصل بالخادم', 'error');
+      return false;
+    }
+  }, [store]);
 
   const createRoom = useCallback((playerName: string) => {
     console.log('createRoom called with:', playerName);
     store.setLoading(true);
     store.setLoadingMessage('جار إنشاء الغرفة...');
     store.setPlayerName(playerName);
-    socketRef.current?.emit('create_room', { playerName });
-  }, [store]);
+    emitSafe('create_room', { playerName });
+  }, [store, emitSafe]);
 
   const joinRoom = useCallback((code: string, playerName: string) => {
     console.log('joinRoom called with:', code, playerName);
     store.setLoading(true);
     store.setLoadingMessage('جار الانضمام للغرفة...');
     store.setPlayerName(playerName);
-    socketRef.current?.emit('join_room', { code: code.toUpperCase(), playerName });
-  }, [store]);
+    emitSafe('join_room', { code: code.toUpperCase(), playerName });
+  }, [store, emitSafe]);
 
   const leaveRoom = useCallback(() => {
     const code = store.roomCode;
     if (code) {
-      socketRef.current?.emit('leave_room', { code });
+      emitSafe('leave_room', { code });
     }
     disconnect();
     store.reset();
-  }, [store, disconnect]);
+  }, [store, disconnect, emitSafe]);
 
   const startGame = useCallback(() => {
     const code = store.roomCode;
     if (code) {
       store.setLoading(true);
-      socketRef.current?.emit('start_game', { code });
+      console.log('startGame emitting for room:', code);
+      emitSafe('start_game', { code });
     }
-  }, [store]);
+  }, [store, emitSafe]);
 
   const pickTarget = useCallback((targetIndex: number) => {
     const code = store.roomCode;
     if (code) {
-      socketRef.current?.emit('pick_target', { code, targetIndex });
+      emitSafe('pick_target', { code, targetIndex });
     }
-  }, [store]);
+  }, [store, emitSafe]);
 
   const pickNumber = useCallback((number: string) => {
     const code = store.roomCode;
     if (code) {
-      socketRef.current?.emit('pick_number', { code, number });
+      emitSafe('pick_number', { code, number });
     }
-  }, [store]);
+  }, [store, emitSafe]);
 
   const guessCount = useCallback((count: number) => {
     const code = store.roomCode;
     if (code) {
-      socketRef.current?.emit('guess_count', { code, count });
+      emitSafe('guess_count', { code, count });
     }
-  }, [store]);
+  }, [store, emitSafe]);
 
   const guessSuits = useCallback((suits: string[]) => {
     const code = store.roomCode;
     if (code) {
-      socketRef.current?.emit('guess_suits', { code, suits });
+      emitSafe('guess_suits', { code, suits });
     }
-  }, [store]);
+  }, [store, emitSafe]);
 
   const sendPing = useCallback(() => {
-    socketRef.current?.emit('ping');
-  }, []);
+    emitSafe('ping', {});
+  }, [emitSafe]);
 
   return {
     socket: socketRef.current,
+    socketReady,
     connected: store.connected,
     disconnect,
+    emitSafe,
     createRoom,
     joinRoom,
     leaveRoom,
