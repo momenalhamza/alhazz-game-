@@ -113,7 +113,7 @@ export default function HomeScreen() {
         {!showJoinInput ? (
           <View style={styles.buttonContainer}>
             <Pressable
-              style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed]}
+              style={({ pressed }) => [styles.button, styles.primaryButton, pressed && styles.buttonPressed]}
               onPress={() => {
                 if (!playerName.trim()) {
                   Alert.alert('خطأ', 'يرجى إدخال اسم اللاعب');

@@ -2,6 +2,7 @@
   "buildCommand": "cd mobile && npm install && npx expo export --platform web",
   "outputDirectory": "mobile/dist",
   "framework": null,
+  "installCommand": "npm install",
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ]

@@ -212,10 +212,13 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     padding: 12,
     marginBottom: 16,
+    backgroundColor: '#cc3333',
+    borderRadius: 8,
   },
   backButtonText: {
-    color: COLORS.textSecondary,
-    fontSize: 18,
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   title: {
     fontSize: 36,
